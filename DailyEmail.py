@@ -108,8 +108,7 @@ if weekno > 0 and weekno < 6:
 
 # Displaying the date information without the time
 def getStringDateNoTime():
-    time = getStringDateTime().split(" ")[:-1]
-    return " ".join(str(word) for word in time)
+    return " ".join(str(word) for word in getStringDateTime().split(" ")[:-1])
 
 # Displaying the date information with the time
 def getStringDateTime():
