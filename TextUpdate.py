@@ -1,87 +1,131 @@
+# Send Text
 from twilio.rest import Client
-import requests
+# Google spreadsheet
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
+# Other Imports
 import os
 from dotenv import load_dotenv
-import datetime as dt
-
-runProgram = False
-weekno = dt.datetime.today().weekday()
-time_change_from_utc = 5
-time = int(str(dt.datetime.now().time().strftime('%H'))[1]) + time_change_from_utc
-
-if weekno < 5 and time > 8 and time <= 15:
-    runProgram = True
+import requests
 
 load_dotenv()
 
+# All Environment Variables ...
+# TD
 TD_REFRESH_TOKEN = os.environ.get('TD_REFRESH_TOKEN')
 TD_REFRESH_URL = "https://api.tdameritrade.com/v1/oauth2/token"
 TD_CLIENT_ID = os.environ.get('TD_CLIENT_ID')
-TD_ACCOUNT_URL = f"https://api.tdameritrade.com/v1/accounts/{os.environ.get('TD_ACCOUNT_NUMBER')}"
-TD_KEY = os.environ.get('TD_KEY')
+TD_ACCOUNT_NUMBER = os.environ.get("TD_ACCOUNT_NUMBER")
+TD_ACCOUNT_URL = "https://api.tdameritrade.com/v1/accounts/" + TD_ACCOUNT_NUMBER
 
+# twilio
 ACCOUNT_SID = os.environ.get('ACCOUNT_SID')
 AUTH_TOKEN = os.environ.get('AUTH_TOKEN')
 FROM_NUMBER = os.environ.get('FROM_NUMBER')
 TO_NUMBER = os.environ.get('TO_NUMBER')
 
+# IP Address
 IP_ADDRESS = os.environ.get('IP_ADDRESS')
 
-# Printing String Dates
+# Printing String Months
 def numberToMonth(number):
     number = int(number)
-    month = ''
     if number == 1:
-        month = "January"
+        return "January"
     if number == 2:
-        month = "February"
+        return "February"
     if number == 3:
-        month = "March"
+        return "March"
     if number == 4:
-        month = "April"
+        return "April"
     if number == 5:
-        month = 'May'
+        return 'May'
     if number == 6:
-        month = 'June'
+        return 'June'
     if number == 7:
-        month = "July"
+        return "July"
     if number == 8:
-        month = "August"
+        return "August"
     if number == 9:
-        month = 'September'
+        return 'September'
     if number == 10:
-        month = 'October'
+        return 'October'
     if number == 11:
-        month = 'November'
+        return 'November'
     if number == 12:
-        month = 'December'
-    return month
+        return 'December'
 
+# Print String Day of the Week
+def getDayOfWeek(number):
+    if number == 1:
+        return "Monday"
+    if number == 2:
+        return "Tuesday"
+    if number == 3:
+        return "Wednesday"
+    if number == 4:
+        return "Thursday"
+    if number == 5:
+        return "Friday"
+    if number == 6:
+        return "Saturday"
+    if number == 0:
+        return "Sunday"
+
+# Local Time Information
+time = requests.get(f'http://worldtimeapi.org/api/ip/{IP_ADDRESS}').json()
+time_info = str(time['datetime'])
+year = time_info[:4]
+month = time_info[5:7]
+string_month = numberToMonth(month)
+day = time_info[8:10]
+hour = time_info[11:13]
+minute = time_info[14:16]
+day_of_week = getDayOfWeek(time['day_of_week'])
+timezone = time['timezone']
+
+
+weekno = int(time['day_of_week'])
+runProgram = False
+# Checks if it is a weekday and between the hours of 8 and 4
+if weekno > 0 and weekno < 6 and int(str(time['datetime'])[11:13]) >= 8 and int(str(time['datetime'])[11:13]) <= 16:
+    runProgram = True
+
+# Returns the string date with the current time
+def getStringDate():
+    if int(hour) <= 12:
+        return f'{day_of_week} {string_month} {day}, {year} at {hour}:{minute}AM {timezone}'
+    else:
+        return f'{day_of_week} {string_month} {day}, {year} at {str(int(hour)-12)}:{minute}PM {timezone}'
+
+# Accesses the following API's: TD Ameritrade, Google Sheets, and Twilio
+# The information is used to update a google sheet and send a text if it is the proper time
 class TextUpdate:
     def __init__(self):
         pass
 
+    # Updates all relevant cells with the account data using the google sheets api   
     def updateGoogleSheet(self):
         info = self.formatTDData()
         scope = ["https://spreadsheets.google.com/feeds","https://www.googleapis.com/auth/spreadsheets","https://www.googleapis.com/auth/drive.file","https://www.googleapis.com/auth/drive"]
-        credentials = ServiceAccountCredentials.from_json_keyfile_name('finances.json',scope)
+        credentials = ServiceAccountCredentials.from_json_keyfile_name('/home/jlev111/Finances/finances.json',scope)
         client = gspread.authorize(credentials)
         sheet = client.open('Finances').get_worksheet(3)
         sheet.update_cell(2,2,info['Account Value'])
-        stocks = client.open('Finances').get_worksheet(4)
+        sheet.update_cell(9,1,getStringDate())
+        self.stocks = client.open('Finances').get_worksheet(4)
+        self.stocks.update_cell(10,1,getStringDate())
         keys = list(info.keys())[:-1]
         for i in range(len(keys)):
             for j in range(1,10):
                 if j == 1:
-                    stocks.update_cell(j,i+2,list(info.keys())[i])
+                    self.stocks.update_cell(j,i+2,list(info.keys())[i])
                 elif j != 1 and j < 8 :
                     number = j-2
-                    stocks.update_cell(j,i+2,info[list(info.keys())[i]][number][1])
+                    self.stocks.update_cell(j,i+2,info[list(info.keys())[i]][number][1])
         print("Google Sheet Updated")
 
-
+    # Returns the json data from the TD Ameritrade API
     def getTDAmeritradeData(self):
         params = {'grant_type': 'refresh_token','refresh_token': TD_REFRESH_TOKEN,
         'client_id':TD_CLIENT_ID}
@@ -94,7 +138,8 @@ class TextUpdate:
         data = requests.get(TD_ACCOUNT_URL,params=params, headers=headers)
         data = data.json()
         return data
-
+        
+    # Returns a dictionary with all of the position information and account balances from the API Call
     def formatTDData(self):
         data = self.getTDAmeritradeData()
         self.current_account_value = data['securitiesAccount']['currentBalances']['liquidationValue']
@@ -117,12 +162,13 @@ class TextUpdate:
         info.update({'Account Value': self.current_account_value})
         return info
 
+    # Returns a string containing all of the positions 
     def getPositionsString(self):
         info = self.formatTDData()
         string = ""
         for d,v in info.items():
             if d != "Account Value":
-                string += d 
+                string += d
                 string += '\n'
                 string += "Day Profit/Loss: " + str(round(v[0][1],2))
                 string += '\n'
@@ -135,26 +181,7 @@ class TextUpdate:
         string = string[:-2]
         return string
 
-    def getStringDate(self):
-            day = str(dt.datetime.now())[8:10]
-            month = str(dt.datetime.now())[5:7]
-            year = str(dt.datetime.now())[:4]
-            month = numberToMonth(month)
-            response = requests.get(f'http://worldtimeapi.org/api/ip/{IP_ADDRESS}').json()
-            time =  str(response['datetime'][11:16])
-            timezone = str(response['abbreviation'])
-            time_int = int(time.split(":")[0]) 
-            am_or_pm = ""
-            if time_int < 12:
-                am_or_pm = "AM"
-            else:
-                am_or_pm = "PM"
-
-            if time_int > 12:
-                time_int = time_int - 12
-                time = str(time_int) + time[2:]
-            return f'{month} {day}, {year} at {time}{am_or_pm} {timezone}'
-
+    # Returns the body of the message string
     def formatMessage(self):
         account_value = str(self.current_account_value)
         account_value_string = "$" + account_value[:2] + "," + account_value[2:]
@@ -163,19 +190,22 @@ class TextUpdate:
             movement = "Positive Movement"
         else:
             movement = "Negative Movement"
-        message = f"""{movement}
-Your TD Account Balance is: {account_value_string}
+        return f"""{movement}
+TD Balance: {account_value_string}
+Day Proft/Loss: {str(self.stocks.get('O2')[0][0])}
+Day Proft/Loss PCTG: {str(self.stocks.get('O3')[0][0])}
+Total Profit/Loss: {str(self.stocks.get('O4')[0][0])}
 \nYour account has moved ${round(self.difference,2)} in the last hour.
 \nHere are your positions:
 {self.getPositionsString()}
 
-Dated - {self.getStringDate()}
+Dated - {getStringDate()}
 
 Have a nice day :)
         """
-        return message
-
+    # checks if the conditions are correct to send a message
     def sendMessage(self):
+        # Checks if the account has moved more than 100 dollars in the last hour
         if self.checkForNecessaryUpdate():
             message = self.formatMessage()
             client = Client(ACCOUNT_SID, AUTH_TOKEN)
@@ -189,28 +219,37 @@ Have a nice day :)
         else:
             print("Message not sent")
 
-
+    # Reads a txt file to check its value and find the difference in account movement
+    # if it is more than 100 it returns true
+    # the sheet is written to with the current account value as of that time
     def checkForNecessaryUpdate(self):
-        with open('Send.txt','r') as f:
+        with open('/home/jlev111/Finances/Send.txt','r') as f:
             checked_account_value = eval(f.readline())
             f.close()
-        self.difference = checked_account_value - self.current_account_value
+        self.difference = self.current_account_value - checked_account_value
+        print("Amount difference was: " + str(round(self.difference,2)))
         if abs(self.difference) >= 100:
-            with open('Send.txt','w') as f:
-                f.write(str(self.current_account_value))
+            with open('/home/jlev111/Finances/Send.txt','w') as f:
+                f.write(str(round(self.current_account_value,2)))
+                print("Text file updated")
                 f.close()
                 return True
         else:
-            with open('Send.txt','w') as f:
-                f.write(str(self.current_account_value))
+            with open('/home/jlev111/Finances/Send.txt','w') as f:
+                f.write(str(round(self.current_account_value,2)))
+                print("Text file updated")
                 f.close()
                 return False
 
+# checks if the conditions are correct to run the program
 if runProgram:
     textupdate = TextUpdate()
     textupdate.updateGoogleSheet()
     textupdate.sendMessage()
-    print(f"Script Run on {textupdate.getStringDate()}")
+    print(f"Dated - {getStringDate()}")
+# Otherwise the script will display the time it was run
 else:
+    textupdate = TextUpdate()
     print("The script did not execute. Incorrect Time.")
-    print(f"Script Run on {textupdate.getStringDate()}")
+    print(f"Dated - {getStringDate()}")
+ 
