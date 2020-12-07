@@ -175,7 +175,7 @@ class DailyEmail:
     def getMarcusCDData(self):
         start_date = dt.date(2020,5,26)
         cd_rate = .0135
-        principal = 15_000
+        principal = 1
         current_date = dt.date(int(year),int(month),int(day))
         daily_pay = round(principal*cd_rate/365,2)
         money_made = int((current_date-start_date).days)*daily_pay
